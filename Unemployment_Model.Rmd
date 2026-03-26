@@ -80,7 +80,7 @@ Create a data frame ldf by logging df, ensuring it doesn't contain any empty obs
 
 df <- data %>%
   filter(Year >= 2015) %>%
-  select(MAN, PBS, RT, LH, SLead_SalesTax, EDUHS) %>%
+  select(MAN, PBS, RT, LH, EDUHS, SLead_SalesTax) %>%
   na.omit()
 
 ldf <- ts(log(df))
