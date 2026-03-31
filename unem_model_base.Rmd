@@ -1,0 +1,182 @@
+---
+title: "Lab 4"
+author: "Vincent Ma"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+Hint: Use the code provided in "VECM Model example.Rmd"
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# clean existing variables
+rm(list=ls())
+```
+
+Load required libraries (to read excel files, to manipulate dataframes, to plot time series, to test for stationarity)
+
+```{r}
+
+library(readxl)
+library(dplyr)
+library(tseries)
+
+```
+
+#========================================================
+# Data
+#========================================================
+
+Input project data.
+Create a variable SLead_SalesTax standardizing Lead_SalesTax as if the sales tax rate had been the same as in 2024 for all the years.[Note: sales tax rate was 3.85% before 2024 and 4.35% starting in 2024]
+
+```{r}
+data <- (read_excel("ProjectData/FinalData2026-1.xlsx") %>% as.data.frame()) %>% mutate(SLead_SalesTax = ifelse(Year < 2024, Lead_SalesTax * (4.35 / 3.85), Lead_SalesTax))
+```
+
+Plot the log of each of the BLS time series and compare them with the log of SLead_SalesTax to see if they follow similar trends/seasonality.
+
+```{r}
+
+mlc <- ts(log(data$MLC)) ; man <- ts(log(data$MAN)) ; wt <- ts(log(data$WT)) 
+
+rt <- ts(log(data$RT)) ; twu <- ts(log(data$TWU)) ; info <- ts(log(data$INFO)) 
+
+fa <- ts(log(data$FA)) ; pbs <- ts(log(data$PBS)) ; eduhs <- ts(log(data$EDUHS)) 
+
+lh <- ts(log(data$LH)) ; os <- ts(log(data$OS)) ; g <- ts(log(data$G)) 
+
+slead <- ts(log(data$SLead_SalesTax)) 
+
+
+all <- tibble(slead = slead, mlc = mlc, man = man , wt = wt, rt = rt, twu = twu,  
+
+              info = info, fa = fa, pbs = pbs, eduhs = eduhs) 
+
+all_2 <- tibble(lh = lh, os = os, 
+
+              g = g) 
+
+ 
+
+ 
+
+plot.ts(all) ; plot.ts(all_2) 
+
+```
+
+Using the information collected in Part I of the lab and the insight you gained from the plotting exercise, create a data frame df including 
+- the supply-side BLS series you selected (you can also create aggregates of individual series)
+- the demand-side BLS series you selected (you can also aggregate (add up) individual series)
+- license counts (if you wish)
+- CPI (if you wish)
+- SLead_SalesTax
+
+To focus on recent trends, consider filtering the dataset to remove the earliest years of the series.
+
+Create a data frame ldf by logging df, ensuring it doesn't contain any empty observations.
+
+```{r}
+
+unem <- read_excel("ProjectData/FORT608URN.xlsx", sheet = "Monthly") %>% 
+  as.tibble() %>% na.omit() %>% 
+  select(FORT608URN)
+
+unem_ts <- ts(log(unem))
+
+adf.test(unem_ts)
+adf.test(diff(unem_ts))
+
+df <- data %>%
+  filter(Year >= 2015) %>%
+  select(MAN, PBS, RT, LH, EDUHS, SLead_SalesTax) %>%
+  na.omit()
+
+ldf <- ts(log(df))
+
+df_unem <- bind_cols(df, unem = unem) %>%
+  rename(unem = FORT608URN)
+
+ldf <- ts(log(df_unem))
+```
+
+# Plot the time series included in your model.
+
+```{r}
+plot.ts(ldf)
+```
+
+# Check the order of integration of each of the time series included in the model.
+
+```{r}
+adf.test(ldf[, "MAN"])
+adf.test(ldf[, "PBS"])
+adf.test(ldf[, "RT"])
+adf.test(ldf[, "LH"])
+adf.test(ldf[, "EDUHS"])
+adf.test(ldf[, "SLead_SalesTax"])
+adf.test(ldf[, "unem"])
+```
+
+```{r}
+# ADF test on first differences
+adf.test(diff(ldf[, "MAN"]))
+adf.test(diff(ldf[, "PBS"]))
+adf.test(diff(ldf[, "RT"]))
+adf.test(diff(ldf[, "LH"]))
+adf.test(diff(ldf[, "EDUHS"]))
+adf.test(diff(ldf[, "SLead_SalesTax"]))
+adf.test(diff(ldf[, "unem"]))
+```
+All series are I(1): non-stationary in levels, stationary in first differences.
+
+#========================================================
+# Cointegrating vectors (long run)
+#========================================================
+
+Hint: check if your model is acceptable by using the document "Cookbook.docx"
+
+Calling the packages for use
+
+```{r}
+library(urca)
+library(tsDyn)
+```
+
+# Conduct the Johansen procedure
+
+```{r}
+Johansen <- ca.jo(ldf, ecdet = "none", type = "eigen", K = 12)
+summary(Johansen)
+```
+
+Number of cointegrating vectors: 4 (at 5%)
+
+Coefficients of the cointegrating vectors
+
+```{r}
+Beta <- round(coefB(Johansen, r = 4), 3)
+Beta
+```
+
+#========================================================
+# Short run adjustment coefficients
+#========================================================
+
+```{r}
+vecm <- VECM(ldf, lag = 11, r = 4, estim = "ML", include = "const")
+summary(vecm)
+
+```
+
+For each vector, we need at least one adjustment speed to have the oppositive sign of the corresponding cointegrating vector coefficient and be statistically significant.[Hint: check the R code VECM Model example.Rmd and the document cookbook.docx]
+
+Vec 1: For the first vector, MAN clears the vector because the coefficient on MAN is negative (-0.7324) and the cointegrating vector is positive (1), and MAN is significant (***).
+
+Vec 2: For the second vector, PBS clears the vector because the coefficient on PBS is negative (-0.3122) and the cointegrating vector is positive (1), and PBS is significant (*).
+
+Vec 3: For the third vector, EDUHS clears the vector because the coefficient on EDUHS is positive (1.4265) and the cointegrating vector is negative (-0.713), and EDUHS is significant (*).
+
+Vec 4: For the fourth vector, LH clears the vector because the coefficient on LH is negative (-1.1163) and the cointegrating vector is positive (1), and LH is significant (**).
+....
+
