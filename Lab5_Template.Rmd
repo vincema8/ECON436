@@ -1,0 +1,180 @@
+---
+title: "Lab 5"
+author: "Sophie McKee"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+#========================================================
+# A. Set up
+#========================================================
+
+1.Set up and clean global environment. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# clean existing variables
+rm(list=ls())
+```
+
+
+2.Load required libraries (to read excel files, to manipulate dataframes, to plot time series)
+
+```{r}
+
+library(readxl)
+library(dplyr)
+library(tseries)
+library(tidyverse)
+library(Metrics)
+
+```
+
+#========================================================
+# B. Define model variables
+#========================================================
+
+```{r}
+# Input the latest version of the file "FinalData2026.xlsx
+
+data <- read_excel("ProjectData/FinalData2026-2.xlsx") %>% as.data.frame()
+
+
+# Create a standardized SLead_SalesTax variable
+
+data_1 <- data %>% mutate(SLead_SalesTax = ifelse(Year < 2024, 
+                                                  Lead_SalesTax * (4.35 / 3.85),
+                                                  Lead_SalesTax)) %>% 
+  filter(Year >= 2015) %>% dplyr::select(MAN, PBS, RT, LH, EDUHS, SLead_SalesTax) %>% na.omit()
+
+
+data_1
+# Import your external data
+
+unem <- read_excel("ProjectData/FORT608URN.xlsx", sheet = "Monthly") %>% 
+  as.tibble() %>% dplyr::select(FORT608URN)
+
+
+# Create the dataframe df (make sure to remove any row containing NAs)
+
+df <- bind_cols(data_1, unem)
+
+df$FORT608URN[130] <- 3.4
+
+
+# Create a data frame ldf by logging the dataframe df
+
+ldf <- ts(log(df))
+
+```
+
+
+
+
+#========================================================
+# C. Create VECM model using data up to 2025/12
+#========================================================
+
+Calling the packages for use
+
+```{r}
+library(urca)  # ca.jo
+library(tsDyn) # VECM
+library(vars)  # vec2var
+```
+
+Johansen procedure
+
+```{r}
+Johansen <- ca.jo(ldf, ecdet = "none", type = "eigen", K = 12)
+summary(Johansen)
+```
+Confirm the number of cointegrating vectors based on the results of the Johansen procedure.
+
+NOTE: You need at least 4 cointegrating vectors.
+
+Print the matrix of cointegrating vectors.
+
+```{r}
+Beta <- round(coefB(Johansen, r = 4), 3)
+Beta
+```
+
+
+Short run adjustment coefficients
+
+```{r}
+vecm <- VECM(ldf, lag = 11, r = 4, estim = "ML", include = "const")
+summary(vecm)
+
+```
+
+For each vector, we need at least one adjustment speed to have the oppositive sign of the corresponding cointegrating vector coefficient and be statistically significant.
+
+Vec 1: 
+Vec 2:
+....
+
+#========================================================
+# D. Test if model predicts 2025 data well
+#========================================================
+
+Rerun the same model on data up to 2024/12 (included)
+
+```{r}
+# truncate the data by removing the 12 last observations
+numrow <- nrow(ldf)
+ldf2024 <- ldf[1:(numrow- 12),]
+# Fit the same VECM model
+Johansen2024 <- ca.jo(ldf2024, ecdet="none", type="eigen", K=12)
+
+```
+
+Forecast 2025 data
+
+```{r}
+# vec2var: Transform a VECM to VAR in levels
+vec2var_ca.jo2024 <- vec2var(Johansen2024, r=4)
+# forecasting horizon
+nhor <- 12 
+# Forecasting
+pred_vec2var_ca.jo2025 <- predict(vec2var_ca.jo2024, n.ahead=nhor)
+```
+
+Compare actual and forecasted 2025 log of SLead_SalesTax
+Calculate Mean Absolute Error for the 12 observations of 2025
+
+```{r}
+Forecast2025 <- pred_vec2var_ca.jo2025$fcst$SLead_SalesTax[,1]
+Actual2025 <- ldf[(nrow(ldf) - 11): nrow(ldf), "SLead_SalesTax"]
+
+AE <- 
+MAE <- mae(Actual2025, Forecast2025)
+MAE
+
+
+ 
+```
+
+You can redo steps A-D many times until you find the model with the lowest MAE. 
+Play with the variables included in your model and with the number of months included in your dataset. You can try including data starting in 2013, or in 2014, or later, instead of 2012, and see if you get better predictions.
+
+#========================================================
+# E. Forecast lead_STF_Real for the months 1/26 to 11/26 and save it.
+#========================================================
+
+```{r}
+# vec2var: Transform a VECM to VAR in levels
+# This is the original model, using all the data
+vec2var_ca.jo <- vec2var(Johansen, r=4)
+# forecasting horizon
+nhor <- 11
+# Forecasting 2026 (11 observations)
+pred_vec2var_ca.jo <- predict(vec2var_ca.jo, n.ahead=nhor)
+Forecast2026 <- as.data.frame(pred_vec2var_ca.jo$fcst$FinalData.lead_STF_Real[,1])
+write_csv(Forecast2026, "Forecast2026.csv")
+
+
+
+pred_vec2var_ca.jo$fcst$SLead_SalesTax[,1]
+```
