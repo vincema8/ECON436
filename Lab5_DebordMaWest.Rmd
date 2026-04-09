@@ -179,3 +179,25 @@ write_csv(Forecast2026, "Forecast2026.csv")
 Forecast2026
 
 ```
+
+
+
+
+```{r}
+
+
+par(mar = c(2, 2, 1.5, 1))
+plot(pred_vec2var_ca.jo, names = "SLead_SalesTax", )
+
+
+test <- pred_vec2var_ca.jo
+
+test$fcst$SLead_SalesTax <- exp(test$fcst$SLead_SalesTax)
+
+test$endog[ , 7] <- exp(test$endog[ , 7])
+
+par(mar = c(4, 4, 3, 3))
+plot(test,names = "SLead_SalesTax" )
+
+```
+
